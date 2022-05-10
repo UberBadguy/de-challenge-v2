@@ -1,13 +1,9 @@
 import os
-from os import listdir
-from os.path import isfile, join
 from pyspark.sql import SparkSession
 from pyspark.sql.window import Window
 from pyspark.sql.functions import col, lit, row_number, desc, sum, when, input_file_name, udf
-from pyspark.sql.types import StructType,StructField, StringType, IntegerType
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType
 
-
-import os
 
 print('Job Triggered')
 
