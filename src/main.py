@@ -3,7 +3,9 @@ from os import listdir
 from os.path import isfile, join
 from pyspark.sql import SparkSession
 from pyspark.sql.window import Window
-from pyspark.sql.functions import col, lit, row_number, desc, sum, when
+from pyspark.sql.functions import col, lit, row_number, desc, sum, when, input_file_name, udf
+from pyspark.sql.types import StructType,StructField, StringType, IntegerType
+
 
 import os
 
@@ -14,73 +16,88 @@ dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 input_folder = os.getenv('INPUT_FOLDER', f'{dir_path}\data')
 output_folder = os.getenv('OUTPUT_FOLDER', f'{dir_path}\output')
 
-source_files = [f for f in listdir(input_folder) if isfile(join(input_folder, f))]
-
 # Context Setup
 spark = SparkSession.builder.appName('DE Challenge Mario Leon').getOrCreate()
 
-# Data Read
-for season_json in source_files:
-    
-    val = season_json.replace('season-','').replace('_json.json','')
-    matchesDF = spark.read.json(f"{input_folder}/{season_json}")
+# input schema definition - basic data for job
+inputSchema = StructType([
+      StructField("HomeTeam",StringType(),False),
+      StructField("AwayTeam",StringType(),False),
+      StructField("Date",StringType(),False),
+      StructField("HS",IntegerType(),False),
+      StructField("AS",IntegerType(),False),
+      StructField("FTHG",IntegerType(),False),
+      StructField("FTAG",IntegerType(),False),
+      StructField("FTR",StringType(),False)
+  ])
 
-    # by home results
-    homeDf = matchesDF\
-        .withColumn('team', col('HomeTeam'))\
-        .withColumn('date', col('Date'))\
-        .withColumn('points', when(col('FTR')=='H', lit(3)).when(col('FTR')=='D', lit(1)))\
-        .withColumn('goalShots', col('HS'))\
-        .withColumn('goalsScored', col('FTHG'))\
-        .withColumn('goalsReceived', col('FTAG'))\
-        .where(col('FTR').isin('H', 'D'))\
-        .select('date', 'team', 'points', 'goalShots', 'goalsScored', 'goalsReceived')
 
-    # by away results
-    awayDf = matchesDF\
-        .withColumn('team', col('AwayTeam'))\
-        .withColumn('date', col('Date'))\
-        .withColumn('points', when(col('FTR')=='A', lit(3)).when(col('FTR')=='D', lit(1)))\
-        .withColumn('goalShots', col('AS'))\
-        .withColumn('goalsScored', col('FTAG'))\
-        .withColumn('goalsReceived', col('FTHG'))\
-        .where(col('FTR').isin('A', 'D'))\
-        .select('date', 'team', 'points', 'goalShots', 'goalsScored', 'goalsReceived')
+def season(x):
+    index = x.rindex('/') 
+    outsubstr = x[index+1:]
+    return outsubstr.replace('season-','').replace('_json.json','')
 
-    allPointsDF = homeDf.union(awayDf)
+seasonUDF = udf(lambda z: season(z))
 
-    teamPerformanceDF = allPointsDF.groupBy('team').agg(
-        sum('points').alias('sum_points'),
-        (sum('goalShots')/sum('goalsScored')).alias('shot_goal_ratio'),
-        sum('goalsScored').alias('sum_goals_scored'),
-        sum('goalsReceived').alias('sum_goals_received'),
-        ).select('team', 'sum_points', 'shot_goal_ratio', 'sum_goals_scored', 'sum_goals_received')
+matchesDF = spark.read.schema(inputSchema).json(f"{input_folder}/")
 
-    rankPoints = Window.orderBy(desc("sum_points"))
-    rankShotGoalRatio = Window.orderBy(desc("shot_goal_ratio"))
-    rankGoalScored = Window.orderBy(desc("sum_goals_scored"))
-    rankGoalReceived = Window.orderBy(desc("sum_goals_received"))
+# by home results
+homeDf = matchesDF\
+    .withColumn('season', seasonUDF(input_file_name()))\
+    .withColumn('team', col('HomeTeam'))\
+    .withColumn('date', col('Date'))\
+    .withColumn('points', when(col('FTR')=='H', lit(3)).when(col('FTR')=='D', lit(1)))\
+    .withColumn('goalShots', col('HS'))\
+    .withColumn('goalsScored', col('FTHG'))\
+    .withColumn('goalsReceived', col('FTAG'))\
+    .where(col('FTR').isin('H', 'D'))\
+    .select('season', 'date', 'team', 'points', 'goalShots', 'goalsScored', 'goalsReceived')
 
-    rankedResultsDF = teamPerformanceDF\
-        .withColumn('season', lit(val))\
-        .withColumn('pointRank', row_number().over(rankPoints))\
-        .withColumn('shotGoalRatioRank', row_number().over(rankShotGoalRatio))\
-        .withColumn('goalsScoredRank', row_number().over(rankGoalScored))\
-        .withColumn('goalsReceivedRank', row_number().over(rankGoalReceived))\
-        .select(
-            'season',
-            'team',
-            'sum_points',
-            'pointRank',
-            'shot_goal_ratio',
-            'shotGoalRatioRank',
-            'sum_goals_scored',
-            'goalsScoredRank',
-            'sum_goals_received',
-            'goalsReceivedRank'
-        )
+# by away results
+awayDf = matchesDF\
+    .withColumn('season', seasonUDF(input_file_name()))\
+    .withColumn('team', col('AwayTeam'))\
+    .withColumn('date', col('Date'))\
+    .withColumn('points', when(col('FTR')=='A', lit(3)).when(col('FTR')=='D', lit(1)))\
+    .withColumn('goalShots', col('AS'))\
+    .withColumn('goalsScored', col('FTAG'))\
+    .withColumn('goalsReceived', col('FTHG'))\
+    .where(col('FTR').isin('A', 'D'))\
+    .select('season', 'date', 'team', 'points', 'goalShots', 'goalsScored', 'goalsReceived')
 
-    rankedResultsDF.write.mode('overwrite').partitionBy('season').json(f"{output_folder}/results")
+allPointsDF = homeDf.union(awayDf)
+
+teamPerformanceDF = allPointsDF.groupBy('season','team').agg(
+    sum('points').alias('sum_points'),
+    (sum('goalShots')/sum('goalsScored')).alias('shot_goal_ratio'),
+    sum('goalsScored').alias('sum_goals_scored'),
+    sum('goalsReceived').alias('sum_goals_received'),
+    ).select('season', 'team', 'sum_points', 'shot_goal_ratio', 'sum_goals_scored', 'sum_goals_received')
+
+rankPoints = Window.partitionBy('season').orderBy(desc("sum_points"))
+rankShotGoalRatio = Window.partitionBy('season').orderBy(desc("shot_goal_ratio"))
+rankGoalScored = Window.partitionBy('season').orderBy(desc("sum_goals_scored"))
+rankGoalReceived = Window.partitionBy('season').orderBy(desc("sum_goals_received"))
+
+rankedResultsDF = teamPerformanceDF\
+    .withColumn('pointRank', row_number().over(rankPoints))\
+    .withColumn('shotGoalRatioRank', row_number().over(rankShotGoalRatio))\
+    .withColumn('goalsScoredRank', row_number().over(rankGoalScored))\
+    .withColumn('goalsReceivedRank', row_number().over(rankGoalReceived))\
+    .select(
+        'season',
+        'team',
+        'sum_points',
+        'pointRank',
+        'shot_goal_ratio',
+        'shotGoalRatioRank',
+        'sum_goals_scored',
+        'goalsScoredRank',
+        'sum_goals_received',
+        'goalsReceivedRank'
+    )
+
+rankedResultsDF.write.mode('overwrite').partitionBy('season').json(f"{output_folder}/results")
 
 spark.stop()
 print('Spark Session Terminated')
