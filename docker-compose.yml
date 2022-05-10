@@ -1,0 +1,11 @@
+version: "3.9"
+services:
+  tech-challenge-env:
+    build: .
+    volumes:
+      - ./data:/input/EPL
+      - ./output:/output
+      - ./src:/JOB_FILES
+    environment:
+      - INPUT_FOLDER=/input/EPL
+      - OUTPUT_FOLDER=/output
