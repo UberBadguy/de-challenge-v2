@@ -1,23 +1,18 @@
-import os
 import logging
 from pyspark.sql import SparkSession
 from pyspark.sql.window import Window
 from pyspark.sql.functions import col, lit, row_number, desc, sum, when, input_file_name, udf
 from schemas.epl_data_schema import EPLProperties
 from util.udf import UDFS
+from util.constants import Constants
 
 print('Job Triggered')
-
-# Basic IO definitions - dir_path defaults for local testing
-dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-input_folder = os.getenv('INPUT_FOLDER', f'{dir_path}\data')
-output_folder = os.getenv('OUTPUT_FOLDER', f'{dir_path}\output')
 
 # Context Setup
 spark = SparkSession.builder.appName('DE Challenge Mario Leon').getOrCreate()
 
 # Read the data
-matchesDF = spark.read.schema(EPLProperties.schema).json(f"{input_folder}/")
+matchesDF = spark.read.schema(EPLProperties.schema).json(Constants.INPUT_FOLDER)
 
 # Define UDF to get season value from filename
 getSeasonFromFilenameUDF = udf(UDFS.getSeasonFromFilename)
@@ -82,7 +77,8 @@ rankedResultsDF = teamPerformanceDF\
     )
 
 # Write procedure with season as partition value
-rankedResultsDF.write.mode('overwrite').partitionBy('season').json(f"{output_folder}/results")
+output_path = f"{Constants.OUTPUT_FOLDER}/epl_results"
+rankedResultsDF.write.mode('overwrite').partitionBy('season').json(output_path)
 
 spark.stop()
 print('Spark Session Terminated')
