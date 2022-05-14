@@ -12,9 +12,17 @@ Docker service running
 
 ## Code Run
 
-You should be able to run the challenge by using the following commands, from the root of the folder:
+You should be able to run the challenge code by using the following commands, from the root of the folder:
 
 ```bash
-    cd deployment/
-    docker-compose up
+cd deployment/
+docker-compose up
+```
+
+## Tests
+
+Tests are implemented via ```pytest```, and rn with the command:
+
+```bash
+pytest
 ```
