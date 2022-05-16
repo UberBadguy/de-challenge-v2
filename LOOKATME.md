@@ -4,11 +4,10 @@ Hi, this is my take on DE Challenge v2 for Walmart.
 
 I used PySpark to provide a solution to the requested information.
 
-This proyect will deploy a Jupyter Notebook container, that will submit a PySpark job on entrypoint, writing the results of the team standings on each ranking to the ```./output/epl_results``` folder in json and csv format, partitioned by season
+This proyect will deploy a Jupyter Notebook container, that will submit a PySpark job on entrypoint, writing the results of the team standings on each ranking to the ```./output/epl_results``` folder in csv format.
 
-Using the following structure:
+The output CSV uses the following structure:
 
-### Data Output
 
 Column Name | Description
 --- | --- 
@@ -26,6 +25,7 @@ goals_received_rank | Placement in ```Goals received``` ranking
 ## Requirements
 
 Internet connection (to build the container for the first time)
+
 Docker service running
 
 ## Code Run
