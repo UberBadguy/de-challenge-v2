@@ -11,6 +11,7 @@ Using the following structure:
 ### Data Output
 
 Column Name | Description
+--- | --- 
 season | Season (ex. ```1819```)
 team_name | Participant team name
 season_rank | Placement for the season
